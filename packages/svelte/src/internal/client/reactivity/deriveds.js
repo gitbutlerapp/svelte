@@ -252,8 +252,8 @@ export function derived_safe_equal(fn) {
 export function destroy_derived_effects(derived) {
 	var effects = derived.effects;
 
-	if (effects !== null) {
-		derived.effects = null;
+	if (effects !== null && effects !== UNINITIALIZED) {
+		derived.effects = UNINITIALIZED;
 
 		for (var i = 0; i < effects.length; i += 1) {
 			destroy_effect(/** @type {Effect} */ (effects[i]));

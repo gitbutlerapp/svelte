@@ -18,6 +18,7 @@ import { SvelteSet } from '../../src/reactivity/set';
 import { DESTROYED } from '../../src/internal/client/constants';
 import { noop } from 'svelte/internal/client';
 import { disable_async_mode_flag, enable_async_mode_flag } from '../../src/internal/flags';
+import { UNINITIALIZED } from '../../src/constants';
 
 /**
  * @param runes runes mode
@@ -1463,12 +1464,12 @@ describe('signals', () => {
 			});
 
 			assert.equal(log.length, 0);
-			assert.equal(a?.effects?.length, 1);
+			assert.isTrue(Array.isArray(a?.effects) && a.effects.length === 1);
 
 			destroy2();
 			flushSync();
 
-			assert.equal(a?.effects, null);
+			assert.equal(a?.effects, UNINITIALIZED);
 			assert.equal(log.length, 0);
 
 			const destroy3 = effect_root(() => {
@@ -1481,7 +1482,7 @@ describe('signals', () => {
 			flushSync();
 
 			assert.equal(log.length, 1);
-			assert.equal(a?.effects?.length, 1);
+			assert.isTrue(Array.isArray(a?.effects) && a.effects.length === 1);
 
 			destroy3();
 			destroy1();
