@@ -33,8 +33,7 @@ import {
 	EFFECT_PRESERVED,
 	STALE_REACTION,
 	USER_EFFECT,
-	ASYNC,
-	HAS_EFFECTS
+	ASYNC
 } from '#client/constants';
 import * as e from '../errors.js';
 import { DEV } from 'esm-env';
@@ -44,6 +43,7 @@ import { component_context, dev_current_component_function, dev_stack } from '..
 import { Batch, schedule_effect } from './batch.js';
 import { flatten } from './async.js';
 import { without_reactive_context } from '../dom/elements/bindings/shared.js';
+import { UNINITIALIZED } from '../../../constants.js';
 
 /**
  * @param {'$effect' | '$effect.pre' | '$inspect'} rune
@@ -156,8 +156,10 @@ function create_effect(type, fn, sync, push = true) {
 			(type & ROOT_EFFECT) === 0
 		) {
 			var derived = /** @type {Derived} */ (active_reaction);
-			(derived.effects ??= []).push(effect);
-			derived.f |= HAS_EFFECTS;
+			if (!Array.isArray(derived.effects)) {
+				derived.effects = [];
+			}
+			derived.effects.push(effect);
 		}
 	}
 
