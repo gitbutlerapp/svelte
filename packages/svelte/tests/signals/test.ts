@@ -7,7 +7,9 @@ import {
 	effect_root,
 	render_effect,
 	user_effect,
-	user_pre_effect
+	user_pre_effect,
+	block,
+	branch
 } from '../../src/internal/client/reactivity/effects';
 import { state, set, update, update_pre } from '../../src/internal/client/reactivity/sources';
 import type { Derived, Effect, Source, Value } from '../../src/internal/client/types';
@@ -15,7 +17,7 @@ import { proxy } from '../../src/internal/client/proxy';
 import { derived } from '../../src/internal/client/reactivity/deriveds';
 import { snapshot } from '../../src/internal/shared/clone.js';
 import { SvelteSet } from '../../src/reactivity/set';
-import { DESTROYED } from '../../src/internal/client/constants';
+import { DESTROYED, BRANCH_EFFECT } from '../../src/internal/client/constants';
 import { noop } from 'svelte/internal/client';
 import { disable_async_mode_flag, enable_async_mode_flag } from '../../src/internal/flags';
 
@@ -1491,6 +1493,56 @@ describe('signals', () => {
 			flushSync();
 
 			assert.deepEqual(log, ['inner destroyed', 'inner destroyed']);
+		};
+	});
+
+	// Regression: when a branch effect (e.g. {#if} block) is destroyed, a derived
+	// inside it must not re-evaluate with stale values. The bind:this teardown
+	// microtask can trigger get_value -> execute_derived after the branch is gone,
+	// causing the compute function to receive undefined and crash.
+	test('derived inside a destroyed branch effect is not re-evaluated', () => {
+		return () => {
+			// Simulate the parent state that drives the {#if} condition and is
+			// passed into the branch as the value for a {@const} derived.
+			const value = state<string | undefined>('hello');
+
+			// Capture the derived created inside the branch so we can poke it
+			// after the branch has been destroyed (simulating bind:this teardown).
+			let inner_derived: ReturnType<typeof derived> | undefined;
+
+			const destroy = effect_root(() => {
+				// `block` produces a BLOCK_EFFECT, which contains a `branch`
+				// (BRANCH_EFFECT) — matching the compiled output for {#if}.
+				block(() => {
+					if ($.get(value) !== undefined) {
+						branch(() => {
+							// {@const result = value.toUpperCase()} compiled to a derived
+							inner_derived = derived(() => $.get(value)!.toUpperCase());
+							// Read it once to establish the dependency, as the compiler would.
+							$.get(inner_derived);
+						});
+					}
+				});
+			});
+
+			// Confirm the derived evaluated correctly while the branch is alive.
+			assert.equal($.get(inner_derived!), 'HELLO');
+
+			// Destroy the whole effect tree — this marks the branch DESTROYED.
+			destroy();
+
+			// Ensure the parent branch is now flagged DESTROYED | BRANCH_EFFECT.
+			assert.equal((inner_derived!.parent!.f & (DESTROYED | BRANCH_EFFECT)) === (DESTROYED | BRANCH_EFFECT), true);
+
+			// Now simulate the bind:this teardown microtask: it calls get_value on
+			// the derived after the branch is gone and `value` has become undefined.
+			// Without the fix this would throw because toUpperCase() is called on
+			// undefined. With the fix it should return the last known stale value.
+			set(value, undefined);
+
+			// Must not throw — returns stale cached value instead of re-evaluating.
+			assert.doesNotThrow(() => $.get(inner_derived!));
+			assert.equal($.get(inner_derived!), 'HELLO');
 		};
 	});
 });

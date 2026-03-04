@@ -11,7 +11,8 @@ import {
 	WAS_MARKED,
 	DESTROYED,
 	CLEAN,
-	INERT
+	INERT,
+	BRANCH_EFFECT
 } from '#client/constants';
 import {
 	active_reaction,
@@ -316,6 +317,23 @@ export function execute_derived(derived) {
 		(parent_effect.f & INERT) !== 0
 	) {
 		return derived.v;
+	}
+
+	// don't update deriveds inside a destroyed branch (e.g. {#if} or {#each}) —
+	// the branch scope is invalid and evaluating could trigger side effects
+	// with stale values. get_derived_parent_effect returns null for destroyed
+	// effects, so walk the parent chain to check directly.
+	if (!is_destroying_effect && parent_effect === null) {
+		var ancestor = derived.parent;
+		while (ancestor !== null) {
+			if ((ancestor.f & DERIVED) === 0) {
+				if ((ancestor.f & (DESTROYED | BRANCH_EFFECT)) === (DESTROYED | BRANCH_EFFECT)) {
+					return derived.v;
+				}
+				break;
+			}
+			ancestor = ancestor.parent;
+		}
 	}
 
 	var value;
